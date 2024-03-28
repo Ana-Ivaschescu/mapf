@@ -1,0 +1,51 @@
+{
+    "os": "Windows-10-10.0.19045-SP0",
+    "python": "3.9.18",
+    "heartbeatAt": "2024-03-12T13:11:07.251054",
+    "startedAt": "2024-03-12T13:11:05.803543",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "./configs/conditional_scd/hrscd/mapformer_f.yaml",
+        "--work-dir",
+        "\\aalbes\\D\\mapformer\\runs\\conditional_scd\\hrscd\\mapformer_fastsam_f"
+    ],
+    "state": "running",
+    "program": "C:\\mapformer\\tools\\train.py",
+    "codePathLocal": "tools\\train.py",
+    "codePath": "tools\\train.py",
+    "host": "KWINI",
+    "username": "Beeldinterpreteur",
+    "executable": "c:\\Users\\Specialist\\AppData\\Local\\conda\\conda\\envs\\mapformer_py39\\python.exe",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 3696.0,
+        "min": 0.0,
+        "max": 3696.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3696.0,
+            "min": 0.0,
+            "max": 3696.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 952.7099571228027,
+            "used": 729.9068222045898
+        }
+    },
+    "gpu": "NVIDIA RTX A5000",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA RTX A5000",
+            "memory_total": 25757220864
+        }
+    ],
+    "memory": {
+        "total": 63.849517822265625
+    }
+}

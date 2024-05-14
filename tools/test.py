@@ -227,14 +227,15 @@ def main(args=None):
     # print(num_classes)
     # print(np.unique(gt_sem_maps[0]))
     # print(np.sum(gt_bc_maps[0]))
-    for i, mask in enumerate(outputs):
-        num_classes = len(np.unique(gt_sem_maps[i]))
-        colors = plt.cm.get_cmap('gray', num_classes)
-        colored_mask = colors(mask['sem'])
-        sem_image = Image.fromarray((colored_mask[:, :, 0] * 255).astype(np.uint8), mode='L')
-        sem_image.save(f"sem_mask_{i}.png")
-        binary_image = Image.fromarray((mask['bc'] * 255).astype(np.uint8), mode='L')
-        binary_image.save(f"bc_mask_{i}.png")
+    if cfg.plot_test:
+        for i, mask in enumerate(outputs):
+            num_classes = len(np.unique(gt_sem_maps[i]))
+            colors = plt.cm.get_cmap('gray', num_classes)
+            colored_mask = colors(mask['sem'])
+            sem_image = Image.fromarray((colored_mask[:, :, 0] * 255).astype(np.uint8), mode='L')
+            sem_image.save(f"sem_mask_{i}.png")
+            binary_image = Image.fromarray((mask['bc'] * 255).astype(np.uint8), mode='L')
+            binary_image.save(f"bc_mask_{i}.png")
     if rank == 0:
         if args.out:
             print(f'\nwriting results to {args.out}')

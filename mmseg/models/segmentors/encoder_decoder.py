@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+import numpy
 
 from mmseg.core import add_prefix
 from mmseg.ops import resize
@@ -10,6 +11,7 @@ from ..builder import SEGMENTORS
 from .base import BaseSegmentor
 from mmseg.utils import split_images
 from fastsam import FastSAM
+from transformers import Swinv2Model, AutoBackbone
 
 
 @SEGMENTORS.register_module()
@@ -36,6 +38,10 @@ class EncoderDecoder(BaseSegmentor):
         self._init_auxiliary_head(auxiliary_head)
         if self.backbone_type == "FastSAM":
             self.backbone = FastSAM(self.backbone_type_name)
+        elif self.backbone_type == "Swin":
+            self.backbone = Swinv2Model.from_pretrained(backbone.version)
+            #self.backbone = AutoBackbone.from_pretrained(backbone.version, out_features=["stage1", "stage2", "stage3", "stage4"])
+
         else:
             self.backbone = builder.build_backbone(backbone)
             self.init_weights(pretrained=pretrained)
@@ -118,6 +124,21 @@ class EncoderDecoder(BaseSegmentor):
             )
         feats = feats[-1:] + feats[:-1]
         return feats
+    
+    def swin_encode(self, img):
+        """Swin encoder from images"""
+        if img.shape[1] == 6:
+            x1, x2 = split_images(img)
+            img = merge_batches(x1, x2)
+        #self.backbone.set_imgsz(x.shape[3])
+        output = self.backbone(img, output_hidden_states=True)
+        #feats = output.feature_maps
+        batch_size, sequence, channels = output["last_hidden_state"].shape
+        reshaped_hidden_state = output["last_hidden_state"].view(batch_size, int(numpy.sqrt(sequence)), int(numpy.sqrt(sequence)), channels)
+        reshaped_hidden_state = reshaped_hidden_state.permute(0, 3, 1, 2)
+        feats = [output["reshaped_hidden_states"][1], output["reshaped_hidden_states"][2], output["reshaped_hidden_states"][4], reshaped_hidden_state]
+        #feats = [reshaped_hidden_state, reshaped_hidden_state, reshaped_hidden_state, reshaped_hidden_state]
+        return feats
 
     def encode_decode(self, img, img_metas):
         """Encode images with backbone and decode into a semantic segmentation
@@ -125,6 +146,8 @@ class EncoderDecoder(BaseSegmentor):
         #x = self.extract_feat(img)
         if self.backbone_type == "FastSAM":
             x = self.fast_sam_encode(img)
+        elif self.backbone_type == "Swin":
+            x = self.swin_encode(img)
         else:
             x = self.extract_feat(img)
         out = self._decode_head_forward_test(x, img_metas)

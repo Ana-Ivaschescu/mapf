@@ -69,6 +69,8 @@ class EncoderDecoderCCD(EncoderDecoder):
 
         if self.backbone_type == "FastSAM":
             x = self.fast_sam_encode(img)
+        elif self.backbone_type == "Swin":
+            x = self.swin_encode(img)
         else:
             x = self.extract_feat(img)
         losses = dict()
@@ -176,6 +178,8 @@ class EncoderDecoderCCD(EncoderDecoder):
 
         if self.backbone_type == "FastSAM":
             x = self.fast_sam_encode(img)
+        elif self.backbone_type == "Swin":
+            x = self.swin_encode(img)
         else:
             x = self.extract_feat(img)
         output = self._decode_head_forward_test(

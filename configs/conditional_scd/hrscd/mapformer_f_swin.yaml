@@ -3,7 +3,7 @@ checkpoint_config:
   interval: 100000
 cudnn_benchmark: false
 data:
-  samples_per_gpu: 2
+  samples_per_gpu: 8
   test:
     data_root: 'C:\mapformer\data\preprocessed\2000'
     ignore_index_bc: 255
@@ -33,7 +33,7 @@ data:
       transforms:
       - keep_ratio: true
         type: Resize
-      - size_divisor: 32
+      - size_divisor: 128
         type: ResizeToMultiple
       - type: RandomFlip
       - mean:
@@ -149,7 +149,7 @@ data:
       transforms:
       - keep_ratio: true
         type: Resize
-      - size_divisor: 32
+      - size_divisor: 128
         type: ResizeToMultiple
       - type: RandomFlip
       - mean:
@@ -188,7 +188,7 @@ evaluation:
 find_unused_parameters: true
 gpu_ids:
 - 0
-load_from: null
+load_from:
 log_config:
   hooks:
   - by_epoch: false
@@ -211,9 +211,10 @@ lr_config:
   warmup_ratio: 1.0e-06
 model:
   backbone:
-    ori_type: mit_b2
+    ori_type: none
+    version: microsoft/swinv2-tiny-patch4-window16-256
     style: pytorch
-    type: BitemporalBackbone
+    type: Swin
   decode_head:
     align_corners: false
     balance_pos_neg: false
@@ -229,10 +230,10 @@ model:
     ignore_index_bc: 255
     ignore_index_sem: 255
     in_channels:
-    - 64
-    - 128
-    - 320
-    - 512
+    - 192
+    - 384
+    - 768
+    - 768
     in_index:
     - 0
     - 1
@@ -257,8 +258,8 @@ model:
       type: BN
     num_classes: 5
     type: JointMapFormerHead
-  inference_tile_size: 504
-  pretrained: '\\aalbes\D\mapformer\model_ckpt\mit_b2.pth'
+  inference_tile_size: 512
+  pretrained: 
   test_cfg:
     mode: whole
   train_cfg: {}
@@ -279,11 +280,11 @@ optimizer:
   type: AdamW
   weight_decay: 0.01
 optimizer_config: {}
-output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_self_attention'
+output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_swin_self_attention_4heads'
 resume_from: null
-run_name: mapformer_f_self_attention
+run_name: mapformer_f_swin_self_attention_4heads
 runner:
-  max_iters: 128000
+  max_iters: 64000
   type: IterBasedRunner
 workflow:
 - - train

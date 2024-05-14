@@ -3,7 +3,7 @@ checkpoint_config:
   interval: 100000
 cudnn_benchmark: false
 data:
-  samples_per_gpu: 2
+  samples_per_gpu: 8
   test:
     data_root: 'C:\mapformer\data\preprocessed\2000'
     ignore_index_bc: 255
@@ -177,7 +177,7 @@ data:
 dist_params:
   backend: nccl
 evaluation:
-  interval: 20
+  interval: 2000
   metric:
   - mIoU
   - BC
@@ -211,7 +211,7 @@ lr_config:
   warmup_ratio: 1.0e-06
 model:
   backbone:
-    ori_type: mit_b2
+    ori_type: mit_b3
     style: pytorch
     type: BitemporalBackbone
   decode_head:
@@ -238,7 +238,7 @@ model:
     - 1
     - 2
     - 3
-    k: 1
+    k: 10
     loss_decode_bc:
       loss_weight: 1.0
       type: CrossEntropyLoss
@@ -258,7 +258,7 @@ model:
     num_classes: 5
     type: JointMapFormerHead
   inference_tile_size: 504
-  pretrained: '\\aalbes\D\mapformer\model_ckpt\mit_b2.pth'
+  pretrained: '\\aalbes\D\mapformer\model_ckpt\mit_b3.pth'
   test_cfg:
     mode: whole
   train_cfg: {}
@@ -279,11 +279,11 @@ optimizer:
   type: AdamW
   weight_decay: 0.01
 optimizer_config: {}
-output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_self_attention'
+output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_mitb3'
 resume_from: null
-run_name: mapformer_f_self_attention
+run_name: mapformer_f_mitb3
 runner:
-  max_iters: 128000
+  max_iters: 64000
   type: IterBasedRunner
 workflow:
 - - train

@@ -134,6 +134,7 @@ data/**.tif
 model_ckpt
 runs
 
+*Copy/
 *.png
 results/
 results_fastsam/

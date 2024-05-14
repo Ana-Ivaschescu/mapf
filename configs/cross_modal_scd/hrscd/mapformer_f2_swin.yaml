@@ -3,9 +3,9 @@ checkpoint_config:
   interval: 100000
 cudnn_benchmark: false
 data:
-  samples_per_gpu: 2
+  samples_per_gpu: 8
   test:
-    data_root: 'C:\mapformer\data\preprocessed\2000'
+    data_root: ./data/preprocessed/2000
     ignore_index_bc: 255
     ignore_index_sem: 255
     pipeline:
@@ -58,7 +58,7 @@ data:
     test_mode: true
     type: HRSCDatasetCCD
   train:
-  - data_root: 'C:\mapformer\data\preprocessed\500'
+  - data_root: ./data/preprocessed/500
     ignore_index_bc: 255
     ignore_index_sem: 255
     pipeline:
@@ -121,7 +121,7 @@ data:
     test_mode: false
     type: HRSCDatasetCCD
   val:
-    data_root: 'C:\mapformer\data\preprocessed\2000'
+    data_root: ./data/preprocessed/2000
     ignore_index_bc: 255
     ignore_index_sem: 255
     pipeline:
@@ -177,7 +177,7 @@ data:
 dist_params:
   backend: nccl
 evaluation:
-  interval: 20
+  interval: 2000
   metric:
   - mIoU
   - BC
@@ -211,58 +211,80 @@ lr_config:
   warmup_ratio: 1.0e-06
 model:
   backbone:
-    ori_type: mit_b2
+    ori_type: none
+    version: microsoft/swinv2-tiny-patch4-window16-256
     style: pytorch
-    type: BitemporalBackbone
+    type: Swin
   decode_head:
-    align_corners: false
-    balance_pos_neg: false
-    channels: 256
-    contrastive_loss_weight: 1.0
-    dropout_ratio: 0.1
-    extra_branch: false
-    feature_strides:
-    - 4
-    - 8
-    - 16
-    - 32
-    ignore_index_bc: 255
-    ignore_index_sem: 255
-    in_channels:
-    - 64
-    - 128
-    - 320
-    - 512
-    in_index:
-    - 0
-    - 1
-    - 2
-    - 3
-    k: 1
-    loss_decode_bc:
-      loss_weight: 1.0
-      type: CrossEntropyLoss
-      use_sigmoid: false
-    loss_decode_sem:
-      loss_weight: 1.0
-      type: CrossEntropyLoss
-      use_sigmoid: false
-    map_encoder:
-      n_semantic_classes: 5
-      out_channels: 32
-      scale: 0.25
-      type: BasicMapEncoder
-    norm_cfg:
-      requires_grad: true
-      type: BN
-    num_classes: 5
-    type: JointMapFormerHead
+    bc_head:
+      align_corners: false
+      balance_pos_neg: false
+      channels: 256
+      contrastive_loss_weight: 1.0
+      dropout_ratio: 0.1
+      extra_branch: false
+      feature_strides:
+      - 4
+      - 8
+      - 16
+      - 32
+      ignore_index: 255
+      in_channels:
+      - 192
+      - 384
+      - 768
+      - 768
+      in_index:
+      - 0
+      - 1
+      - 2
+      - 3
+      k: 10
+      loss_decode:
+        loss_weight: 1.0
+        type: CrossEntropyLoss
+        use_sigmoid: false
+      map_encoder:
+        n_semantic_classes: 5
+        out_channels: 32
+        scale: 0.25
+        type: BasicMapEncoder
+      norm_cfg:
+        requires_grad: true
+        type: BN
+      num_classes: 2
+      type: CrossModalMapFormerHead
+    sem_head:
+      align_corners: false
+      channels: 256
+      dropout_ratio: 0.1
+      ignore_index: 255
+      in_channels:
+      - 192
+      - 384
+      - 768
+      - 768
+      in_index:
+      - 0
+      - 1
+      - 2
+      - 3
+      loss_decode:
+        loss_weight: 1.0
+        type: CrossEntropyLoss
+        use_sigmoid: false
+      norm_cfg:
+        requires_grad: true
+        type: BN
+      num_classes: 5
+      type: CrossModalSegformerSemHead
+    type: BaseHeadCCD
   inference_tile_size: 504
-  pretrained: '\\aalbes\D\mapformer\model_ckpt\mit_b2.pth'
+  pretrained:
   test_cfg:
     mode: whole
   train_cfg: {}
-  type: EncoderDecoderCCD
+  type: EncoderDecoderCMCD
 optimizer:
   betas:
   - 0.9
@@ -279,13 +301,13 @@ optimizer:
   type: AdamW
   weight_decay: 0.01
 optimizer_config: {}
-output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_self_attention'
+output_dir: '\\aalbes\D\mapformer\runs\crossmodal_scd\hrscd\mapformer_f2_swin'
 resume_from: null
-run_name: mapformer_f_self_attention
+run_name: crossmodal_mapformer_f2_swin
 runner:
-  max_iters: 128000
+  max_iters: 64000
   type: IterBasedRunner
 workflow:
 - - train
   - 1
-plot_test: False
+plot_test: True

@@ -177,7 +177,7 @@ data:
 dist_params:
   backend: nccl
 evaluation:
-  interval: 20
+  interval: 2000
   metric:
   - mIoU
   - BC
@@ -239,7 +239,8 @@ model:
     - 1
     - 2
     - 3
-    k: 1
+    k: 10
+    fusion_type: conv
     loss_decode_bc:
       loss_weight: 1.0
       type: CrossEntropyLoss
@@ -280,13 +281,13 @@ optimizer:
   type: AdamW
   weight_decay: 0.01
 optimizer_config: {}
-output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_swin_self_attention_4heads'
+output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_swin_c3po_basic'
 resume_from: null
-run_name: mapformer_f_swin_self_attention_4heads
+run_name: mapformer_f_swin_c3po_basic
 runner:
   max_iters: 64000
   type: IterBasedRunner
 workflow:
 - - train
   - 1
-plot_test: False
+plot_test: True

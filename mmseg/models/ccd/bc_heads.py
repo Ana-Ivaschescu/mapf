@@ -70,7 +70,7 @@ class KConcatModule(nn.Module):
         self.conv2 = ConvModule(out_channels * k, out_channels * k, kernel_size=1, norm_cfg=norm_cfg,
                                 groups=k)
 
-    def forward(self, features, weight_inputs=None):
+    def forward(self, features, f1 , f2, weight_inputs=None):
         '''
         Assumes features = [f1,f2,m1] or features = [f1,f2] or already concatenated tensors.
         '''
@@ -78,6 +78,39 @@ class KConcatModule(nn.Module):
         f = self.conv1(concat_features)
         return self.conv2(f)
 
+
+class KConcatModuleC3PO(nn.Module):
+    '''
+    Module for extracting K representations of joint features in parallel.
+    '''
+    def __init__(self, f_channels, in_channels, out_channels, k, norm_cfg):
+        super(KConcatModuleC3PO, self).__init__()
+
+        self.i1 = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.i2 = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.app = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.exchange = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv1 = ConvModule(in_channels, out_channels * k, kernel_size=1, norm_cfg=norm_cfg)
+        self.conv2 = ConvModule(out_channels * k, out_channels * k, kernel_size=1, norm_cfg=norm_cfg,
+                                groups=k)
+
+    def forward(self, features, f1, f2, weight_inputs=None):
+        '''
+        Assumes features = [f1,f2,m1] or features = [f1,f2] or already concatenated tensors.
+        '''
+        info = self.i1(f1) + self.i2(f2)
+        appear = self.app(self.relu(f2 - f1))
+        exchange = self.exchange(torch.max(f1, f2) - torch.min(f1, f2))
+        f = info + appear + exchange
+        f = self.relu(f)
+
+        concat_features = features if isinstance(features, torch.Tensor) else torch.cat(features, dim=1)
+        concat_features = torch.cat([f, concat_features], dim=1)
+        f = self.conv1(concat_features)
+        return self.conv2(f)
+    
 
 class ContrastiveModule(nn.Module):
     '''

@@ -7,7 +7,7 @@ from abc import ABCMeta
 from mmcv.runner import force_fp32
 from mmcv.cnn import ConvModule, normal_init
 from mmcv.utils import build_from_cfg
-from .bc_heads import ConcatModule, KConcatModule, ContrastiveModule
+from .bc_heads import ConcatModule, KConcatModule, ContrastiveModule, KConcatModuleC3PO
 from .map_encoders import MAP_ENCODERS
 from ..decode_heads.decode_head import BaseDecodeHead
 from ..decode_heads import SegformerHead
@@ -244,7 +244,7 @@ class JointAttentionHead(JointHeadCCD):
     '''
     Joint binary change and semantic segmentation head based on our attention-style feature fusion.
     '''
-    def __init__(self, feature_strides, map_encoder, extra_branch=False, k=None, **kwargs):
+    def __init__(self, feature_strides, map_encoder, extra_branch=False, k=None, fusion_type="conv", **kwargs):
         super(JointAttentionHead, self).__init__(input_transform='multiple_select', **kwargs)
         assert len(feature_strides) == len(self.in_channels)
         assert min(feature_strides) == feature_strides[0]
@@ -263,35 +263,51 @@ class JointAttentionHead(JointHeadCCD):
         else:
             self.k = k
 
+        self.fusion_type = fusion_type
+        
+        # self.temporal_fusion_modules = nn.ModuleList(
+        #     [KConcatModule(
+        #         in_channels=2*self.in_channels[s] + self.map_encoder.out_channels[s],
+        #         out_channels=self.channels,
+        #         k=self.k + (1 if self.extra_branch else 0),
+        #         norm_cfg=self.norm_cfg
+        #     ) for s in range(num_inputs)]
+        # )
         self.temporal_fusion_modules = nn.ModuleList(
-            [KConcatModule(
-                in_channels=2*self.in_channels[s] + self.map_encoder.out_channels[s],
+            [KConcatModuleC3PO(
+                f_channels=self.in_channels[s],
+                in_channels=3*self.in_channels[s] + self.map_encoder.out_channels[s],
                 out_channels=self.channels,
                 k=self.k + (1 if self.extra_branch else 0),
                 norm_cfg=self.norm_cfg
             ) for s in range(num_inputs)]
         )
-        # self.attention_weights = nn.ModuleList(
-        #     [nn.Conv2d(
-        #         in_channels=self.map_encoder.out_channels[s],
-        #         out_channels=self.k * self.channels,
-        #         kernel_size=1,
-        #         ) for s in range(num_inputs)]
-        # )
-        # self.attention_weights = nn.ModuleList(
-        #     [SelfAttention2D(
-        #         in_channels = self.map_encoder.out_channels[s],
-        #         out_channels=self.k * self.channels,
-        #     ) for s in range(num_inputs)]
-        # )
-        self.attention_weights = nn.ModuleList(
-            [MultiHeadSelfAttention2d(
-                in_channels = self.map_encoder.out_channels[s],
-                heads=4, 
-                hidden_dim=16, 
-                output_dim=self.k * self.channels,
-            ) for s in range(num_inputs)]
-        )
+        if self.fusion_type == "self-attention":
+            self.attention_weights = nn.ModuleList(
+                [SelfAttention2D(
+                    in_channels = self.map_encoder.out_channels[s],
+                    out_channels=self.k * self.channels,
+                ) for s in range(num_inputs)]
+            )
+        elif self.fusion_type == "multi-head-attention":
+            self.attention_weights = nn.ModuleList(
+                [MultiHeadSelfAttention2d(
+                    in_channels = self.map_encoder.out_channels[s],
+                    heads=4, 
+                    hidden_dim=32, 
+                    output_dim=self.k * self.channels,
+                ) for s in range(num_inputs)]
+            )
+        else:
+            self.attention_weights = nn.ModuleList(
+                [nn.Conv2d(
+                    in_channels=self.map_encoder.out_channels[s],
+                    out_channels=self.k * self.channels,
+                    kernel_size=1,
+                    ) for s in range(num_inputs)]
+            )
+        
+        
         self.fusion_conv = ConvModule(
             in_channels=self.channels * num_inputs,
             out_channels=self.channels,
@@ -308,7 +324,7 @@ class JointAttentionHead(JointHeadCCD):
             if m1.shape[2:] != f1.shape[2:]:
                 m1 = resize(m1, size=f1.shape[2:], mode='bilinear', align_corners=self.align_corners)
 
-            h = module(features=[f1, f2, m1])
+            h = module(features=[f1, f2, m1], f1=f1, f2=f2)
 
             if self.extra_branch:
                 f_extra = h[:,-self.channels:]
@@ -351,7 +367,8 @@ class JointMapFormerHead(JointAttentionHead):
         feature_strides, 
         map_encoder, 
         extra_branch=False, 
-        k=None, 
+        k=None,
+        fusion_type="conv", 
         contrastive_loss_weight=1.0,
         balance_pos_neg=True,
         **kwargs
@@ -361,6 +378,7 @@ class JointMapFormerHead(JointAttentionHead):
             map_encoder=map_encoder,
             extra_branch=extra_branch,
             k=k,
+            fusion_type=fusion_type,
             **kwargs
         )
         self.contrastive_img_forward = SegformerHead(
@@ -407,7 +425,7 @@ class JointMapFormerHead(JointAttentionHead):
             else:
                 m1_ = m1
 
-            h = module(features=[f1, f2, m1_])
+            h = module(features=[f1, f2, m1_], f1=f1, f2=f2)
 
             if self.extra_branch:
                 f_extra = h[:,-self.channels:]
@@ -661,7 +679,7 @@ class JointC3POHead(JointHeadCCD):
             [MultiHeadSelfAttention2d(
                 in_channels = self.map_encoder.out_channels[s],
                 heads=4, 
-                hidden_dim=16, 
+                hidden_dim=32, 
                 output_dim=self.k * self.channels,
             ) for s in range(num_inputs)]
         )
@@ -759,7 +777,7 @@ class MultiHeadSelfAttention2d(nn.Module):
         self.value_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
         
         self.softmax = nn.Softmax(dim=-1)
-        self.linear = nn.Linear(hidden_dim * heads, self.output_dim)
+        self.linear = nn.Conv2d(hidden_dim * heads, self.output_dim, kernel_size=1)
         
     def forward(self, x):
         batch_size, channels, height, width = x.size()
@@ -769,7 +787,6 @@ class MultiHeadSelfAttention2d(nn.Module):
         values = self.value_conv(x).view(batch_size, self.heads, self.hidden_dim, -1)
         
         queries = queries.permute(0, 1, 3, 2)
-        keys = keys.permute(0, 1, 2, 3)
         values = values.permute(0, 1, 3, 2)
         
         attention = torch.matmul(queries, keys)

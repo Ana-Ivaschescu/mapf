@@ -281,13 +281,13 @@ optimizer:
   type: AdamW
   weight_decay: 0.01
 optimizer_config: {}
-output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_swin_c3po_basic'
+output_dir: '\\aalbes\D\mapformer\runs\conditional_scd\hrscd\mapformer_f_swin_m1_mft'
 resume_from: null
-run_name: mapformer_f_swin_c3po_basic
+run_name: mapformer_f_swin_m1_mft
 runner:
   max_iters: 64000
   type: IterBasedRunner
 workflow:
 - - train
   - 1
-plot_test: True
+plot_test: False

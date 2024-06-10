@@ -3,6 +3,7 @@ Subheads for binary change detection.
 '''
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from mmcv.utils import build_from_cfg
 from mmcv.cnn import ConvModule
 
@@ -13,6 +14,9 @@ from ..builder import HEADS
 from ..decode_heads.decode_head import BaseDecodeHead
 from ..cd.fhd import MLP, FHD_Module
 from ...ops import resize
+
+from functools import reduce
+from operator import __add__
 
 
 class BaseHeadBC(BaseDecodeHead):
@@ -111,6 +115,192 @@ class KConcatModuleC3PO(nn.Module):
         f = self.conv1(concat_features)
         return self.conv2(f)
     
+
+
+class KConcatModuleC3POv2(nn.Module):
+    '''
+    Module for extracting K representations of joint features in parallel.
+    '''
+    def __init__(self, f_channels, in_channels, out_channels, k, norm_cfg):
+        super(KConcatModuleC3POv2, self).__init__()
+
+        self.i1 = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.i2 = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.app = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.exchange = nn.Conv2d(f_channels, f_channels, kernel_size=1, stride=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv1 = ConvModule(in_channels, out_channels * k, kernel_size=1, norm_cfg=norm_cfg)
+        self.conv2 = ConvModule(out_channels * k, out_channels * k, kernel_size=1, norm_cfg=norm_cfg,
+                                groups=k)
+
+    def forward(self, features, f1, f2, weight_inputs=None):
+        '''
+        Assumes features = [f1,f2,m1] or features = [f1,f2] or already concatenated tensors.
+        '''
+        #info = self.i1(f1) + self.i2(f2)
+        appear = self.app(self.relu(torch.abs(f2 - f1)))
+        #exchange = self.exchange(torch.max(f1, f2) - torch.min(f1, f2))
+        #f = info + appear + exchange
+        appear = self.relu(appear)
+
+        concat_features = features if isinstance(features, torch.Tensor) else torch.cat(features, dim=1)
+        concat_features = torch.cat([appear, concat_features], dim=1)
+        f = self.conv1(concat_features)
+        f = self.conv2(f)
+        return f, appear
+    
+
+class GCLayer(nn.Module):
+    def __init__(self, in_channels):
+        super(GCLayer, self).__init__()
+
+        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, bias=False)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, in_channels))
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, feats):
+        mask = self.softmax(self.conv(feats))
+        gc = self.global_pool(torch.mul(mask, feats))
+        return gc
+
+    
+class FeedForward(nn.Module):
+    def __init__(self, dim, hidden_dim):
+        super(FeedForward, self).__init__()
+        self.fc1 = nn.Conv2d(dim, hidden_dim, kernel_size=1, stride=1, bias=False)
+        self.gelu = nn.GELU()
+        self.dropout = nn.Dropout(p=0.1)
+        self.fc2 = nn.Conv2d(hidden_dim, dim, kernel_size=1, stride=1, bias=False)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.gelu(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+        x = self.dropout(x)
+        return x
+
+class CATFusionModule(nn.Module):
+    '''
+    Module for extracting K representations of joint features in parallel.
+    '''
+    def __init__(self, f_channels, in_channels, out_channels, k, norm_cfg):
+        super(CATFusionModule, self).__init__()
+
+        self.conv = nn.Conv2d(2*f_channels, f_channels, kernel_size=3, stride=1, bias=False)
+        self.conv_l2 = nn.Conv2d(f_channels, out_channels, kernel_size=1, stride=1, bias=False)
+        #self.linear = nn.Linear(in_channels, out_channels)
+        self.gc_layer = GCLayer(f_channels)
+        self.self_attention = MultiHeadSelfAttention2d(in_channels=out_channels, heads=8, hidden_dim=64, output_dim=out_channels)
+        self.cross_attention = MultiHeadCrossAttention2d(in_channels=f_channels, heads=8, hidden_dim=64, output_dim=out_channels)
+        #self.layer_norm = nn.LayerNorm(normalized_shape=(in_channels, height, width))
+        self.feed_forward = KConcatModule(in_channels, out_channels, k=10)
+        
+
+    def forward(self, features, f1, f2, m1, weight_inputs=None):
+        '''
+        Assumes features = [f1,f2,m1] or features = [f1,f2] or already concatenated tensors.
+        '''
+        features = features if isinstance(features, torch.Tensor) else torch.cat(features, dim=1)
+
+        pad_feats = nn.ZeroPad2d(1)(features)
+        f = self.conv(pad_feats) + torch.abs(f2 - f1)
+        gc = self.gc_layer(f)
+        cross_attn = self.cross_attention(f, gc)
+        f = self.conv_l2(f)
+        f = cross_attn + f
+        _, channels, height, width = f.shape
+        # f = nn.LayerNorm(normalized_shape=(channels, height, width))(f)
+        self_attn = self.self_attention(f)
+        f = self_attn + f
+        
+        # f = nn.LayerNorm(normalized_shape=(channels, height, width))(f)
+        ff = self.feed_forward(f)
+        f = ff + f
+       
+        # f = nn.LayerNorm(normalized_shape=(channels, height, width))(f)
+
+        return f
+    
+class MultiHeadSelfAttention2d(nn.Module):
+    def __init__(self, in_channels, heads, hidden_dim, output_dim=None):
+        super(MultiHeadSelfAttention2d, self).__init__()
+        self.heads = heads
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim if output_dim else in_channels
+        
+        self.query_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
+        
+        self.softmax = nn.Softmax(dim=-1)
+        self.linear = nn.Conv2d(hidden_dim * heads, self.output_dim, kernel_size=1)
+        
+    def forward(self, x):
+        batch_size, channels, height, width = x.size()
+        
+        queries = self.query_conv(x).view(batch_size, self.heads, self.hidden_dim, -1)
+        keys = self.key_conv(x).view(batch_size, self.heads, self.hidden_dim, -1)
+        values = self.value_conv(x).view(batch_size, self.heads, self.hidden_dim, -1)
+        
+        queries = queries.permute(0, 1, 3, 2)
+        values = values.permute(0, 1, 3, 2)
+        
+        attention = torch.matmul(queries, keys)
+        attention /= self.hidden_dim ** 0.5
+        attention = self.softmax(attention)
+        
+        out = torch.matmul(attention, values)
+        
+        out = out.permute(0, 1, 3, 2).contiguous().view(batch_size, -1, height, width)
+        
+        out = self.linear(out)
+        
+        return out
+    
+
+class MultiHeadCrossAttention2d(nn.Module):
+    def __init__(self, in_channels, heads, hidden_dim, output_dim=None):
+        super(MultiHeadCrossAttention2d, self).__init__()
+        self.heads = heads
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim if output_dim else in_channels
+        
+        self.query_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, hidden_dim * heads, kernel_size=1)
+        
+        self.softmax = nn.Softmax(dim=-1)
+        self.linear = nn.Conv2d(hidden_dim * heads, self.output_dim, kernel_size=1)
+        self.dropout = nn.Dropout(p=0.1)
+        
+    def forward(self, feat1, feat2):
+        batch_size, channels, height, width = feat1.size()
+        
+        queries = self.query_conv(feat1).view(batch_size, self.heads, self.hidden_dim, -1)
+        keys = self.key_conv(feat2).view(batch_size, self.heads, self.hidden_dim, -1)
+        values = self.value_conv(feat2).view(batch_size, self.heads, self.hidden_dim, -1)
+        
+        queries = queries.permute(0, 1, 3, 2)
+        values = values.permute(0, 1, 3, 2)
+
+        queries = F.normalize(queries, dim=3)
+        keys = F.normalize(keys, dim=2)
+        
+        attention = torch.matmul(queries, keys)
+        #attention /= self.hidden_dim ** 0.5
+        #attention = self.softmax(attention)
+        
+        out = torch.matmul(attention, values)
+        
+        out = out.permute(0, 1, 3, 2).contiguous().view(batch_size, -1, height, width)
+        
+        out = self.linear(out)
+        out = self.dropout(out)
+        
+        return out
+
 
 class ContrastiveModule(nn.Module):
     '''

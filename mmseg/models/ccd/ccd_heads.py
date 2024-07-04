@@ -266,11 +266,28 @@ class JointAttentionHead(JointHeadCCD):
 
         self.fusion_type = fusion_type
         
+        # self.temporal_fusion_modules = nn.ModuleList(
+        #     [KConcatModuleC3POv2(
+        #         f_channels=self.in_channels[s],
+        #         in_channels=3*self.in_channels[s],
+        #         out_channels=self.channels,
+        #         k=self.k + (1 if self.extra_branch else 0),
+        #         norm_cfg=self.norm_cfg
+        #     ) for s in range(num_inputs)]
+        # )
         self.temporal_fusion_modules = nn.ModuleList(
             [KConcatModule(
                 in_channels=2*self.in_channels[s] + self.map_encoder.out_channels[s],
                 out_channels=self.channels,
                 k=self.k + (1 if self.extra_branch else 0),
+                norm_cfg=self.norm_cfg
+            ) for s in range(num_inputs)]
+        )
+        self.map_mft_mix = nn.ModuleList(
+            [KConcatModule(
+                in_channels=2*self.channels,
+                out_channels=self.channels,
+                k=2,
                 norm_cfg=self.norm_cfg
             ) for s in range(num_inputs)]
         )
@@ -303,7 +320,7 @@ class JointAttentionHead(JointHeadCCD):
             self.attention_weights = nn.ModuleList(
                 [MultiHeadSelfAttention2d(
                     in_channels = self.map_encoder.out_channels[s],
-                    heads=4, 
+                    heads=1, 
                     hidden_dim=32, 
                     output_dim=self.k * self.channels,
                 ) for s in range(num_inputs)]
@@ -332,7 +349,7 @@ class JointAttentionHead(JointHeadCCD):
                     output_dim=self.channels)
         
         self.fusion_conv = ConvModule(
-            in_channels=self.channels * num_inputs,
+            in_channels=self.channels * num_inputs * 2,
             out_channels=self.channels,
             kernel_size=1,
             norm_cfg=self.norm_cfg)
@@ -387,8 +404,17 @@ class JointAttentionHead(JointHeadCCD):
                 f_mtf_k.shape[3],
                 f_mtf_k.shape[4]).softmax(dim=1) # (B,K,C,H,W)
 
-            # f = (h_k * attn_weights).sum(dim=1)  # (B,C,H,W)
-            f = (h_k * attn_weights).sum(dim=1) + (f_mtf_k * mtf_weights).sum(dim=1)  # (B,C,H,W)
+            #f = (h_k * attn_weights).sum(dim=1)  # (B,C,H,W)
+            f = torch.cat([(h_k * attn_weights).sum(dim=1), (f_mtf_k * mtf_weights).sum(dim=1)], dim=1)  # (B,C,H,W)
+            # f = self.map_mft_mix[s](features=f, f1=f1, f2=f2)
+            # f = f.reshape(
+            #     f_mtf.shape[0],
+            #     2,
+            #     self.channels,
+            #     f_mtf.shape[2],
+            #     f_mtf.shape[3]
+            # ) # (B,K,C,H,W)
+            # f = f.sum(dim=1)
             # f = self.cross_attention(attn_weights, h)
             if self.extra_branch:
                 f = f + f_extra
@@ -510,7 +536,16 @@ class JointMapFormerHead(JointAttentionHead):
                 f_mtf_k.shape[4]).softmax(dim=1) # (B,K,C,H,W)
 
             # f = (h_k * attn_weights).sum(dim=1)  # (B,C,H,W)
-            f = (h_k * attn_weights).sum(dim=1) + (f_mtf_k * mtf_weights).sum(dim=1)
+            f = torch.cat([(h_k * attn_weights).sum(dim=1), (f_mtf_k * mtf_weights).sum(dim=1)], dim=1)  # (B,C,H,W)
+            # f = self.map_mft_mix[s](features=f, f1=f1, f2=f2)
+            # f = f.reshape(
+            #     f_mtf.shape[0],
+            #     2,
+            #     self.channels,
+            #     f_mtf.shape[2],
+            #     f_mtf.shape[3]
+            # ) # (B,K,C,H,W)
+            # f = f.sum(dim=1)
             # f = self.cross_attention(attn_weights, h)
             if self.extra_branch:
                 f = f + f_extra
@@ -803,7 +838,7 @@ class SelfAttention2D(nn.Module):
         self.in_channels = in_channels
         if hidden_dim is None:
             #hidden_dim = in_channels // 2
-            hidden_dim = 24
+            hidden_dim = 32
         self.hidden_dim = hidden_dim
 
         self.query = nn.Conv2d(in_channels, hidden_dim, kernel_size=1)

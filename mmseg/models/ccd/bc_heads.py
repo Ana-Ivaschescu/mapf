@@ -142,13 +142,13 @@ class KConcatModuleC3POv2(nn.Module):
         appear = self.app(self.relu(torch.abs(f2 - f1)))
         #exchange = self.exchange(torch.max(f1, f2) - torch.min(f1, f2))
         #f = info + appear + exchange
-        appear = self.relu(appear)
+        mft = self.relu(appear)
 
         concat_features = features if isinstance(features, torch.Tensor) else torch.cat(features, dim=1)
-        concat_features = torch.cat([appear, concat_features], dim=1)
+        concat_features = torch.cat([mft, concat_features], dim=1)
         f = self.conv1(concat_features)
         f = self.conv2(f)
-        return f, appear
+        return f, mft
     
 
 class GCLayer(nn.Module):
@@ -725,7 +725,7 @@ class AttentionHead(BaseHeadBC):
             if m1.shape[2:] != f1.shape[2:]:
                 m1 = resize(m1, size=f1.shape[2:], mode='bilinear', align_corners=self.align_corners)
 
-            h = module(features=[f1, f2, m1])
+            h = module(features=[f1, f2, m1], f1=f1, f2=f2)
 
             if self.extra_branch:
                 f_extra = h[:,-self.channels:]
@@ -822,7 +822,7 @@ class MapFormerHead(AttentionHead):
             else:
                 m1_ = m1
 
-            h = module(features=[f1, f2, m1_])
+            h = module(features=[f1, f2, m1_], f1=f1, f2=f2)
 
             if self.extra_branch:
                 f_extra = h[:,-self.channels:]

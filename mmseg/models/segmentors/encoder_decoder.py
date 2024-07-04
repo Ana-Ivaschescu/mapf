@@ -111,8 +111,9 @@ class EncoderDecoder(BaseSegmentor):
     
     def fast_sam_encode(self, img):
         """FastSAM encoder from images"""
-        x1, x2 = split_images(img)
-        x = merge_batches(x1, x2)
+        # x1, x2 = split_images(img)
+        # x = merge_batches(x1, x2)
+        x = img
         #self.backbone.set_imgsz(x.shape[3])
         feats = self.backbone(
             x,

@@ -121,7 +121,7 @@ class CrossModalAttentionHead(BaseHeadBC):
             if m1.shape[2:] != f2.shape[2:]:
                 m1 = resize(m1, size=f2.shape[2:], mode='bilinear', align_corners=self.align_corners)
 
-            h = module(features=[f2, m1])
+            h = module(features=[f2, m1], f1=f2, f2=f2)
 
             if self.extra_branch:
                 f_extra = h[:,-self.channels:]
@@ -220,7 +220,7 @@ class CrossModalMapFormerHead(CrossModalAttentionHead):
             else:
                 m1_ = m1
 
-            h = module(features=[f2, m1_])
+            h = module(features=[f2, m1_], f1=f2, f2=f2)
 
             if self.extra_branch:
                 f_extra = h[:,-self.channels:]

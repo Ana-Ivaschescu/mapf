@@ -126,6 +126,7 @@ class SegformerHead(BaseDecodeHead):
 
     def forward(self, inputs):
         # Receive 4 stage backbone feature map: 1/4, 1/8, 1/16, 1/32
+        # inputs = inputs[-1:] + inputs[:-1]
         inputs = self._transform_inputs(inputs)
         outs = []
         for idx in range(len(inputs)):
